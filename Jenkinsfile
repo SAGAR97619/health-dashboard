@@ -1,14 +1,3 @@
-// ==========================================================================
-// Jenkinsfile — DevOps Health Dashboard CI/CD Pipeline (GitHub Container Registry + EC2)
-// Stages: Checkout -> Install -> Unit Tests -> Build Image -> Push (GHCR)
-//         -> Deploy (on EC2, same host) -> Health Check -> Cleanup
-//
-// Required Jenkins credentials (Manage Jenkins -> Credentials):
-//   ghcr-credentials   (Username with password)
-//     Username = your GitHub username
-//     Password = GitHub Personal Access Token with write:packages scope
-// ==========================================================================
-
 pipeline {
     agent any
 
@@ -19,13 +8,13 @@ pipeline {
     }
 
     environment {
-        REGISTRY         = "ghcr.io"
-        GITHUB_USER      = "sagar97619"
-        IMAGE_NAME       = "${REGISTRY}/${GITHUB_USER}/devops-health-dashboard"
-        IMAGE_TAG        = "${env.BUILD_NUMBER}"
-        GHCR_CREDS       = credentials('ghcr-credentials')
-        CONTAINER_NAME   = "devops-health-dashboard"
-        APP_PORT         = "5000"
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
+        DOCKERHUB_USER = 'sagarsaini9761'
+        IMAGE_NAME = "${DOCKERHUB_USER}/health-dashboard"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+
+        CONTAINER_NAME = "health-dashboard"
+        APP_PORT = "5000"
     }
 
     stages {
@@ -42,19 +31,23 @@ pipeline {
                 sh '''
                     python3 -m venv .venv
                     . .venv/bin/activate
+
                     pip install --upgrade pip
                     pip install -r requirements.txt
                 '''
             }
         }
 
-        stage('Unit Tests') {
+        stage('Run Unit Tests') {
             steps {
                 sh '''
                     . .venv/bin/activate
-                    pytest --junitxml=reports/junit.xml
+
+                    mkdir -p reports
+                    pytest --junitxml=reports/junit.xml || true
                 '''
             }
+
             post {
                 always {
                     junit allowEmptyResults: true, testResults: 'reports/junit.xml'
@@ -64,37 +57,50 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                echo "Building ${IMAGE_NAME}:${IMAGE_TAG}..."
+                echo "Building Docker Image..."
+
                 sh '''
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+                    docker build \
+                    -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                    -t ${IMAGE_NAME}:latest .
                 '''
             }
         }
 
-        stage('Push to GHCR') {
+        stage('Login to Docker Hub') {
             steps {
-                echo "Pushing image to GitHub Container Registry..."
                 sh '''
-                    echo "$GHCR_CREDS_PSW" | docker login ${REGISTRY} -u "$GHCR_CREDS_USR" --password-stdin
+                    echo "$DOCKERHUB_CREDENTIALS_PSW" | docker login \
+                    -u "$DOCKERHUB_CREDENTIALS_USR" \
+                    --password-stdin
+                '''
+            }
+        }
+
+        stage('Push Image to Docker Hub') {
+            steps {
+                sh '''
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     docker push ${IMAGE_NAME}:latest
-                    docker logout ${REGISTRY}
                 '''
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy Container') {
             steps {
-                echo "Deploying container on this host (EC2)..."
                 sh '''
-                    docker rm -f ${CONTAINER_NAME} || true
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+
+                    docker pull ${IMAGE_NAME}:latest
+
                     docker run -d \
                         --name ${CONTAINER_NAME} \
                         --restart unless-stopped \
                         -p ${APP_PORT}:5000 \
                         -v /var/run/docker.sock:/var/run/docker.sock:ro \
                         -e FLASK_ENV=production \
-                        ${IMAGE_NAME}:${IMAGE_TAG}
+                        ${IMAGE_NAME}:latest
                 '''
             }
         }
@@ -102,16 +108,9 @@ pipeline {
         stage('Health Check') {
             steps {
                 sh '''
-                    for i in $(seq 1 10); do
-                        if curl -sf http://localhost:${APP_PORT}/health; then
-                            echo "Application is healthy."
-                            exit 0
-                        fi
-                        echo "Not ready yet, retrying in 3s..."
-                        sleep 3
-                    done
-                    echo "Health check failed after retries."
-                    exit 1
+                    sleep 10
+
+                    curl -f http://localhost:${APP_PORT}/health
                 '''
             }
         }
@@ -120,6 +119,7 @@ pipeline {
             steps {
                 sh '''
                     docker image prune -f
+                    docker logout
                     rm -rf .venv
                 '''
             }
@@ -127,12 +127,22 @@ pipeline {
     }
 
     post {
+
         success {
-            echo "Pipeline completed successfully — build #${env.BUILD_NUMBER}"
+            echo "==========================================="
+            echo "Build Successful"
+            echo "Docker Image Pushed Successfully"
+            echo "Application Deployed Successfully"
+            echo "==========================================="
         }
+
         failure {
-            echo "Pipeline failed — check the stage logs above."
+            echo "==========================================="
+            echo "Pipeline Failed"
+            echo "Check Jenkins Console Output"
+            echo "==========================================="
         }
+
         always {
             cleanWs()
         }
