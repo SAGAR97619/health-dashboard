@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: devops-health-dashboard:latest
+    container_name: devops-health-dashboard
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-.env}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REFRESH_INTERVAL_MS=${REFRESH_INTERVAL_MS:-2000}
+      - CPU_CRITICAL_THRESHOLD=${CPU_CRITICAL_THRESHOLD:-90}
+      - RAM_CRITICAL_THRESHOLD=${RAM_CRITICAL_THRESHOLD:-85}
+      - DISK_CRITICAL_THRESHOLD=${DISK_CRITICAL_THRESHOLD:-90}
+    volumes:
+      # Mount the Docker socket (read-only) so the dashboard can report on
+      # containers/images/volumes running on the host. Omit this mount if
+      # you don't want the dashboard to have Docker visibility.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dashboard-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - dashboard-net
+
+networks:
+  dashboard-net:
+    driver: bridge
+
+volumes:
+  dashboard-logs:

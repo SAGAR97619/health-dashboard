@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DevOps Health Dashboard</title>
+<meta name="description" content="Real-time system, CPU, memory, disk, network and Docker monitoring dashboard.">
+
+<!-- Bootstrap 5 -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+<!-- Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<!-- Fonts: Space Grotesk (display/UI) + JetBrains Mono (metrics/data) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body data-theme="dark">
+
+<!-- Boot / loading overlay -->
+<div id="boot-overlay" class="boot-overlay">
+  <div class="boot-inner">
+    <div class="boot-pulse"></div>
+    <div class="boot-text">INITIALIZING <span class="boot-cursor">_</span></div>
+    <div class="boot-sub">connecting to host telemetry</div>
+  </div>
+</div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark topbar px-3">
+  <div class="d-flex align-items-center gap-2">
+    <button id="sidebar-toggle" class="btn-icon d-lg-none" aria-label="Toggle sidebar">
+      <i class="bi bi-list"></i>
+    </button>
+    <span class="brand">
+      <i class="bi bi-hexagon-fill brand-icon"></i>
+      DevOps <span class="brand-accent">Health</span> Dashboard
+    </span>
+    <span class="badge version-badge ms-2">v1.0.0</span>
+  </div>
+
+  <div class="d-flex align-items-center gap-3">
+    <div class="live-pill" id="live-pill">
+      <span class="live-dot"></span> LIVE
+    </div>
+    <div class="overall-status-pill" id="overall-status-pill">
+      <span class="status-dot healthy"></span> <span id="overall-status-text">Healthy</span>
+    </div>
+    <button id="theme-toggle" class="btn-icon" aria-label="Toggle theme" title="Toggle light / dark mode">
+      <i class="bi bi-moon-stars-fill"></i>
+    </button>
+  </div>
+</nav>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <ul class="nav-links">
+      <li><a href="#overview" class="nav-link active" data-target="overview"><i class="bi bi-grid-1x2-fill"></i> Overview</a></li>
+      <li><a href="#cpu" class="nav-link" data-target="cpu"><i class="bi bi-cpu-fill"></i> CPU</a></li>
+      <li><a href="#memory" class="nav-link" data-target="memory"><i class="bi bi-memory"></i> Memory</a></li>
+      <li><a href="#disk" class="nav-link" data-target="disk"><i class="bi bi-device-hdd-fill"></i> Disk</a></li>
+      <li><a href="#network" class="nav-link" data-target="network"><i class="bi bi-hdd-network-fill"></i> Network</a></li>
+      <li><a href="#docker" class="nav-link" data-target="docker"><i class="bi bi-box-seam-fill"></i> Docker</a></li>
+      <li><a href="#processes" class="nav-link" data-target="processes"><i class="bi bi-list-task"></i> Processes</a></li>
+      <li><a href="#system" class="nav-link" data-target="system"><i class="bi bi-info-circle-fill"></i> System Info</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <button id="export-pdf" class="btn btn-sm btn-outline-accent w-100 mb-2">
+        <i class="bi bi-file-earmark-pdf"></i> Export Report
+      </button>
+      <button id="download-logs" class="btn btn-sm btn-outline-secondary-glass w-100">
+        <i class="bi bi-download"></i> Download Logs
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+
+    <section id="overview" class="section-block">
+      <div class="section-heading">
+        <h5>Overview</h5>
+        <span class="section-sub">Auto-refreshing every 2s</span>
+      </div>
+      <div class="row g-3" id="summary-cards">
+        <!-- Summary cards injected by JS -->
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-lg-6">
+          <div class="glass-card chart-card">
+            <div class="chart-card-head">
+              <span><i class="bi bi-cpu-fill"></i> CPU Usage</span>
+              <span class="chart-value" id="cpu-chart-value">--%</span>
+            </div>
+            <canvas id="cpuChart" height="140"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="glass-card chart-card">
+            <div class="chart-card-head">
+              <span><i class="bi bi-memory"></i> Memory Usage</span>
+              <span class="chart-value" id="ram-chart-value">--%</span>
+            </div>
+            <canvas id="ramChart" height="140"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="glass-card chart-card">
+            <div class="chart-card-head">
+              <span><i class="bi bi-device-hdd-fill"></i> Disk Usage</span>
+              <span class="chart-value" id="disk-chart-value">--%</span>
+            </div>
+            <canvas id="diskChart" height="140"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="glass-card chart-card">
+            <div class="chart-card-head">
+              <span><i class="bi bi-hdd-network-fill"></i> Network Throughput</span>
+              <span class="chart-value" id="net-chart-value">-- / --</span>
+            </div>
+            <canvas id="networkChart" height="140"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cpu" class="section-block">
+      <div class="section-heading"><h5>CPU</h5></div>
+      <div class="glass-card p-3">
+        <div class="row mb-3">
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Usage</span><span class="metric-val" id="cpu-usage">--%</span></div></div>
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Logical Cores</span><span class="metric-val" id="cpu-cores-logical">--</span></div></div>
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Physical Cores</span><span class="metric-val" id="cpu-cores-physical">--</span></div></div>
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Frequency</span><span class="metric-val" id="cpu-freq">-- MHz</span></div></div>
+        </div>
+        <div class="row mb-2">
+          <div class="col-md-6"><div class="metric-mini"><span class="metric-label">Load Avg (1/5/15m)</span><span class="metric-val" id="cpu-load">-- / -- / --</span></div></div>
+          <div class="col-md-6"><div class="metric-mini"><span class="metric-label">Temperature</span><span class="metric-val" id="cpu-temp">N/A</span></div></div>
+        </div>
+        <div id="per-core-container" class="per-core-grid"></div>
+      </div>
+    </section>
+
+    <section id="memory" class="section-block">
+      <div class="section-heading"><h5>Memory</h5></div>
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="glass-card p-3">
+            <h6 class="subhead">RAM</h6>
+            <div class="progress-bar-wrap"><div class="progress-track"><div class="progress-fill" id="ram-progress"></div></div></div>
+            <div class="row mt-3">
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Total</span><span class="metric-val" id="ram-total">--</span></div></div>
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Used</span><span class="metric-val" id="ram-used">--</span></div></div>
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Available</span><span class="metric-val" id="ram-available">--</span></div></div>
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Percent</span><span class="metric-val" id="ram-percent">--%</span></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="glass-card p-3">
+            <h6 class="subhead">Swap</h6>
+            <div class="progress-bar-wrap"><div class="progress-track"><div class="progress-fill" id="swap-progress"></div></div></div>
+            <div class="row mt-3">
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Total</span><span class="metric-val" id="swap-total">--</span></div></div>
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Used</span><span class="metric-val" id="swap-used">--</span></div></div>
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Free</span><span class="metric-val" id="swap-free">--</span></div></div>
+              <div class="col-6"><div class="metric-mini"><span class="metric-label">Percent</span><span class="metric-val" id="swap-percent">--%</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="disk" class="section-block">
+      <div class="section-heading"><h5>Disk</h5></div>
+      <div class="glass-card p-3 mb-3">
+        <div class="progress-bar-wrap"><div class="progress-track"><div class="progress-fill" id="disk-progress"></div></div></div>
+        <div class="row mt-3">
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Total</span><span class="metric-val" id="disk-total">--</span></div></div>
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Used</span><span class="metric-val" id="disk-used">--</span></div></div>
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Free</span><span class="metric-val" id="disk-free">--</span></div></div>
+          <div class="col-md-3 col-6"><div class="metric-mini"><span class="metric-label">Percent</span><span class="metric-val" id="disk-percent">--%</span></div></div>
+        </div>
+      </div>
+      <div class="glass-card p-3">
+        <h6 class="subhead">Mounted Partitions</h6>
+        <div class="table-responsive">
+          <table class="table table-dash">
+            <thead><tr><th>Device</th><th>Mountpoint</th><th>FS Type</th><th>Total</th><th>Used</th><th>Percent</th></tr></thead>
+            <tbody id="partitions-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="network" class="section-block">
+      <div class="section-heading"><h5>Network</h5></div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Upload Speed</div><div class="metric-val big" id="net-upload">--</div></div></div>
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Download Speed</div><div class="metric-val big" id="net-download">--</div></div></div>
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Bytes Sent</div><div class="metric-val big" id="net-sent">--</div></div></div>
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Bytes Received</div><div class="metric-val big" id="net-recv">--</div></div></div>
+      </div>
+      <div class="glass-card p-3">
+        <h6 class="subhead">Interfaces</h6>
+        <div class="table-responsive">
+          <table class="table table-dash">
+            <thead><tr><th>Interface</th><th>IP Address</th><th>Status</th></tr></thead>
+            <tbody id="interfaces-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="docker" class="section-block">
+      <div class="section-heading"><h5>Docker</h5></div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Running</div><div class="metric-val big" id="docker-running">--</div></div></div>
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Stopped</div><div class="metric-val big" id="docker-stopped">--</div></div></div>
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Images</div><div class="metric-val big" id="docker-images">--</div></div></div>
+        <div class="col-md-3 col-6"><div class="glass-card p-3 text-center"><div class="metric-label">Volumes</div><div class="metric-val big" id="docker-volumes">--</div></div></div>
+      </div>
+      <div class="glass-card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="subhead mb-0">Containers</h6>
+          <span class="badge" id="docker-version-badge">version --</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-dash">
+            <thead><tr><th>ID</th><th>Name</th><th>Image</th><th>Status</th></tr></thead>
+            <tbody id="docker-table-body"></tbody>
+          </table>
+        </div>
+        <div id="docker-empty-state" class="empty-state d-none">
+          <i class="bi bi-box"></i>
+          <p>Docker is not available on this host. Install Docker or check the daemon connection.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="processes" class="section-block">
+      <div class="section-heading">
+        <h5>Processes</h5>
+        <div class="search-wrap">
+          <i class="bi bi-search"></i>
+          <input type="text" id="process-search" placeholder="Search processes...">
+        </div>
+      </div>
+      <div class="glass-card p-3">
+        <div class="table-responsive">
+          <table class="table table-dash">
+            <thead><tr><th>PID</th><th>Name</th><th>User</th><th>CPU %</th><th>Memory %</th><th>Status</th></tr></thead>
+            <tbody id="process-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="system" class="section-block">
+      <div class="section-heading"><h5>System Information</h5></div>
+      <div class="glass-card p-3" id="system-info-grid"></div>
+
+      <div class="glass-card p-3 mt-3">
+        <h6 class="subhead">Logged-in Users</h6>
+        <div class="table-responsive">
+          <table class="table table-dash">
+            <thead><tr><th>User</th><th>Terminal</th><th>Host</th><th>Started</th></tr></thead>
+            <tbody id="users-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="dash-footer">
+      <span>DevOps Health Dashboard <span class="brand-accent">v1.0.0</span> &copy; 2026</span>
+      <span class="dash-footer-sep">|</span>
+      <span>Built with Flask, psutil &amp; Chart.js</span>
+    </footer>
+  </main>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
