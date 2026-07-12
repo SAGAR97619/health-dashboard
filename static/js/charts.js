@@ -8,7 +8,8 @@ const MAX_POINTS = 30;
 
 const chartDefaults = {
   responsive: true,
-  maintainAspectRatio: false,
+  maintainAspectRatio: true,
+  aspectRatio:2,
   animation: { duration: 400, easing: "easeOutQuart" },
   interaction: { intersect: false, mode: "index" },
   plugins: { legend: { display: false } },

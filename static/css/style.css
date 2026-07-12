@@ -277,3 +277,14 @@ body {
   .main-content { padding: 18px 16px 50px; }
   .search-wrap input { width: 150px; }
 }
+.chart-card{
+    position: relative;
+    height: 320px;
+}
+
+.chart-card canvas{
+    width:100% !important;
+    height:250px !important;
+    max-height:250px !important;
+    display:block;
+}
