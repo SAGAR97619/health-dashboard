@@ -1,12 +1,12 @@
 // ==========================================================================
-// Jenkinsfile — DevOps Health Dashboard CI/CD Pipeline
-// Stages: Checkout -> Install -> Unit Tests -> Build Image -> Push -> Deploy
-//         -> Health Check -> Cleanup
+// Jenkinsfile — DevOps Health Dashboard CI/CD Pipeline (GitHub Container Registry + EC2)
+// Stages: Checkout -> Install -> Unit Tests -> Build Image -> Push (GHCR)
+//         -> Deploy (on EC2, same host) -> Health Check -> Cleanup
 //
-// Required Jenkins credentials (configure in Jenkins Credentials Manager):
-//   dockerhub-credentials  (Username with password) — DockerHub login
-//   deploy-ssh-key         (SSH Username with private key) — optional, for
-//                          remote deploys via SSH
+// Required Jenkins credentials (Manage Jenkins -> Credentials):
+//   ghcr-credentials   (Username with password)
+//     Username = your GitHub username
+//     Password = GitHub Personal Access Token with write:packages scope
 // ==========================================================================
 
 pipeline {
@@ -19,9 +19,11 @@ pipeline {
     }
 
     environment {
-        IMAGE_NAME       = "yourdockerhubuser/devops-health-dashboard"
+        REGISTRY         = "ghcr.io"
+        GITHUB_USER      = "your-github-username"        // <-- change this
+        IMAGE_NAME       = "${REGISTRY}/${GITHUB_USER}/devops-health-dashboard"
         IMAGE_TAG        = "${env.BUILD_NUMBER}"
-        DOCKERHUB_CREDS  = credentials('dockerhub-credentials')
+        GHCR_CREDS       = credentials('ghcr-credentials')
         CONTAINER_NAME   = "devops-health-dashboard"
         APP_PORT         = "5000"
     }
@@ -37,7 +39,6 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                echo "Creating virtual environment and installing dependencies..."
                 sh '''
                     python3 -m venv .venv
                     . .venv/bin/activate
@@ -49,7 +50,6 @@ pipeline {
 
         stage('Unit Tests') {
             steps {
-                echo "Running pytest suite..."
                 sh '''
                     . .venv/bin/activate
                     pytest --junitxml=reports/junit.xml
@@ -64,28 +64,28 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                echo "Building Docker image ${IMAGE_NAME}:${IMAGE_TAG}..."
+                echo "Building ${IMAGE_NAME}:${IMAGE_TAG}..."
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
                 '''
             }
         }
 
-        stage('Push to DockerHub') {
+        stage('Push to GHCR') {
             steps {
-                echo "Pushing image to DockerHub..."
+                echo "Pushing image to GitHub Container Registry..."
                 sh '''
-                    echo "$DOCKERHUB_CREDS_PSW" | docker login -u "$DOCKERHUB_CREDS_USR" --password-stdin
+                    echo "$GHCR_CREDS_PSW" | docker login ${REGISTRY} -u "$GHCR_CREDS_USR" --password-stdin
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     docker push ${IMAGE_NAME}:latest
-                    docker logout
+                    docker logout ${REGISTRY}
                 '''
             }
         }
 
         stage('Deploy') {
             steps {
-                echo "Deploying container..."
+                echo "Deploying container on this host (EC2)..."
                 sh '''
                     docker rm -f ${CONTAINER_NAME} || true
                     docker run -d \
@@ -101,7 +101,6 @@ pipeline {
 
         stage('Health Check') {
             steps {
-                echo "Waiting for application to become healthy..."
                 sh '''
                     for i in $(seq 1 10); do
                         if curl -sf http://localhost:${APP_PORT}/health; then
@@ -119,7 +118,6 @@ pipeline {
 
         stage('Cleanup') {
             steps {
-                echo "Cleaning up dangling images and build cache..."
                 sh '''
                     docker image prune -f
                     rm -rf .venv
@@ -130,10 +128,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Pipeline completed successfully — build #${env.BUILD_NUMBER}"
+            echo "Pipeline completed successfully — build #${env.BUILD_NUMBER}"
         }
         failure {
-            echo "❌ Pipeline failed — check the stage logs above."
+            echo "Pipeline failed — check the stage logs above."
         }
         always {
             cleanWs()
