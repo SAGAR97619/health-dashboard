@@ -20,7 +20,7 @@ pipeline {
 
     environment {
         REGISTRY         = "ghcr.io"
-        GITHUB_USER      = "SAGAR97619"        // <-- change this
+        GITHUB_USER      = "sagar97619"
         IMAGE_NAME       = "${REGISTRY}/${GITHUB_USER}/devops-health-dashboard"
         IMAGE_TAG        = "${env.BUILD_NUMBER}"
         GHCR_CREDS       = credentials('ghcr-credentials')
